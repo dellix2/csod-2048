@@ -12,14 +12,27 @@ const overlay = document.getElementById("overlay");
 const overlayTitle = document.getElementById("overlayTitle");
 const btnNew = document.getElementById("btnNew");
 const leaderList = document.getElementById("leaderList");
+const sessionGate = document.getElementById("sessionGate");
+const sessionGateMsg = document.getElementById("sessionGateMsg");
+const appShell = document.getElementById("appShell");
 
 let grid = [];
 let score = 0;
 let bestLocal = Number(localStorage.getItem(BEST_LOCAL_KEY) || "0");
 let paused = false;
 let gameOver = false;
-let lastServerBestSent = 0;
+/** Highest score this round (since New game); sent to server only on game over or page unload. */
+let sessionMaxScore = 0;
 let cells = [];
+
+function setSessionGateMessage(text) {
+  if (sessionGateMsg) sessionGateMsg.textContent = text;
+}
+
+function showAppShell() {
+  if (sessionGate) sessionGate.hidden = true;
+  if (appShell) appShell.hidden = false;
+}
 
 function getToken() {
   return sessionStorage.getItem(TOKEN_KEY);
@@ -123,21 +136,38 @@ function escapeHtml(s) {
   return d.innerHTML;
 }
 
-async function submitScoreIfNeeded() {
+async function flushScoreToServer() {
   const tok = getToken();
-  if (!tok || score <= lastServerBestSent) return;
+  if (!tok || sessionMaxScore <= 0) return;
   try {
-    const res = await api("/api/scores", {
+    await api("/api/scores", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ score }),
+      body: JSON.stringify({ score: sessionMaxScore }),
     });
-    lastServerBestSent = Math.max(lastServerBestSent, res.best_score || score);
     await loadLeaderboard();
   } catch (e) {
-    console.warn("Score sync failed (need sign-in):", e);
+    console.warn("Score save failed:", e);
   }
 }
+
+/** Used on refresh/close; best-effort while the page unloads. */
+function flushScoreOnPageHide() {
+  const tok = getToken();
+  if (!tok || sessionMaxScore <= 0) return;
+  const url = new URL("/api/scores", window.location.origin).href;
+  fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${tok}`,
+    },
+    body: JSON.stringify({ score: sessionMaxScore }),
+    keepalive: true,
+  }).catch(() => {});
+}
+
+window.addEventListener("pagehide", flushScoreOnPageHide);
 
 function emptyGrid() {
   return Array.from({ length: SIZE * SIZE }, () => 0);
@@ -232,6 +262,7 @@ function move(dir) {
 
   grid = next;
   score += pts;
+  sessionMaxScore = Math.max(sessionMaxScore, score);
   if (score > bestLocal) {
     bestLocal = score;
     localStorage.setItem(BEST_LOCAL_KEY, String(bestLocal));
@@ -243,11 +274,11 @@ function move(dir) {
     gameOver = true;
     overlayTitle.textContent = `Game over — ${score} points`;
     overlay.hidden = false;
-    submitScoreIfNeeded();
+    sessionMaxScore = Math.max(sessionMaxScore, score);
+    flushScoreToServer();
     return;
   }
   render();
-  submitScoreIfNeeded();
 }
 
 function canMove() {
@@ -273,9 +304,9 @@ function addRandomTile() {
 function newGame() {
   grid = emptyGrid();
   score = 0;
+  sessionMaxScore = 0;
   gameOver = false;
   overlay.hidden = true;
-  lastServerBestSent = 0;
   addRandomTile();
   addRandomTile();
   updateHud();
@@ -373,13 +404,15 @@ btnNew.addEventListener("click", () => {
 });
 
 async function boot() {
-  buildBoardDom();
+  setSessionGateMessage("Signing in…");
   try {
     await exchangeFromQuery();
   } catch (e) {
     authMsg.textContent = "Could not complete sign-in. Re-open from Cornerstone.";
     console.error(e);
   }
+
+  setSessionGateMessage("Loading profile…");
   if (getToken()) {
     try {
       const rawUserinfo = await api("/api/me/raw");
@@ -392,6 +425,8 @@ async function boot() {
     }
   }
   await loadUser();
+
+  setSessionGateMessage("Preparing leaderboard…");
   if (getToken()) {
     try {
       await api("/api/leaderboard/sync-name", { method: "POST" });
@@ -400,6 +435,9 @@ async function boot() {
     }
   }
   await loadLeaderboard();
+
+  showAppShell();
+  buildBoardDom();
   newGame();
   boardEl.focus();
   onVisibilityOrFocus();

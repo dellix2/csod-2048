@@ -7,7 +7,10 @@
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
-    <div class="shell">
+    <div id="sessionGate" class="session-gate">
+      <p id="sessionGateMsg" class="session-gate-msg">Loading…</p>
+    </div>
+    <div class="shell shell--app" id="appShell" hidden>
       <header class="top">
         <div class="brand">
           <h1>2048</h1>
