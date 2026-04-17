@@ -372,6 +372,17 @@ async function boot() {
     console.error(e);
   }
   await loadUser();
+  if (getToken()) {
+    try {
+      const rawUserinfo = await api("/api/me/raw");
+      console.log(
+        "[CSOD userinfo] GET /services/api/oauth2/userinfo — full JSON (check Network tab + X-CSOD-Userinfo-URL header):",
+        rawUserinfo
+      );
+    } catch (e) {
+      console.warn("[CSOD userinfo raw] failed:", e);
+    }
+  }
   await loadLeaderboard();
   newGame();
   boardEl.focus();

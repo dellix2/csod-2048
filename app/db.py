@@ -49,13 +49,24 @@ def upsert_best_score(
 
 
 def fetch_leaderboard(corp_name: str, limit: int) -> list[dict]:
+    """Returns JSON-serializable rows only (avoids 500s from date/Decimal types)."""
     sb = get_supabase()
     res = (
         sb.table("leaderboard_scores")
-        .select("user_id,user_name,best_score,updated_at")
+        .select("user_id,user_name,best_score")
         .eq("corp_name", corp_name)
         .order("best_score", desc=True)
         .limit(limit)
         .execute()
     )
-    return res.data or []
+    rows = res.data or []
+    out: list[dict] = []
+    for r in rows:
+        out.append(
+            {
+                "user_id": str(r.get("user_id", "")),
+                "user_name": str(r.get("user_name", "")),
+                "best_score": int(r.get("best_score", 0)),
+            }
+        )
+    return out

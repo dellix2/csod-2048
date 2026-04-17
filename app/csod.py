@@ -8,6 +8,11 @@ def _base_url(settings: Settings) -> str:
     return f"https://{corp}.csod.com"
 
 
+def userinfo_url(settings: Settings) -> str:
+    """Public URL used for GET (documented as /services/api/oauth2/userinfo)."""
+    return f"{_base_url(settings)}/services/api/oauth2/userinfo"
+
+
 async def exchange_authorization_code(
     settings: Settings, *, code: str, state: str
 ) -> dict:
@@ -44,12 +49,16 @@ async def fetch_userinfo(settings: Settings, access_token: str) -> dict:
 def parse_csod_user(userinfo: dict) -> tuple[str, str]:
     """
     Returns (user_id, display_name) from CSOD userinfo payload.
-    Field names vary; we accept common variants.
+    Field names vary by tenant; we accept common OAuth + CSOD variants.
     """
     uid = (
         userinfo.get("userId")
         or userinfo.get("user_id")
         or userinfo.get("UserId")
+        or userinfo.get("personId")
+        or userinfo.get("PersonId")
+        or userinfo.get("externalId")
+        or userinfo.get("ExternalId")
         or userinfo.get("sub")
         or userinfo.get("id")
     )
@@ -63,6 +72,8 @@ def parse_csod_user(userinfo: dict) -> tuple[str, str]:
         or userinfo.get("DisplayName")
         or userinfo.get("userName")
         or userinfo.get("UserName")
+        or userinfo.get("email")
+        or userinfo.get("Email")
         or str(uid)
     )
     return str(uid), str(name)

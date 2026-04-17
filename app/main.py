@@ -3,7 +3,7 @@ import logging
 from pathlib import Path
 
 import httpx
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -82,6 +82,23 @@ async def me(
     except ValueError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
     return {"user_id": uid, "user_name": name, "corp": settings.csod_corp}
+
+
+@app.get("/api/me/raw")
+async def me_raw(
+    response: Response,
+    settings: Settings = Depends(get_settings),
+    token: str = Depends(bearer_token),
+):
+    """
+    Returns the exact JSON from CSOD GET .../oauth2/userinfo (for debugging field names in the browser).
+    """
+    response.headers["X-CSOD-Userinfo-URL"] = csod.userinfo_url(settings)
+    try:
+        userinfo = await csod.fetch_userinfo(settings, token)
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=e.response.status_code, detail=e.response.text) from e
+    return userinfo
 
 
 @app.post("/api/scores")
