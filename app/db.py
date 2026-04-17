@@ -20,6 +20,10 @@ def upsert_best_score(
     user_name: str,
     score: int,
 ) -> dict:
+    """
+    Always refresh user_name (display name can change when employee API starts working).
+    best_score is max(previous, submitted session score).
+    """
     sb = get_supabase()
     existing = (
         sb.table("leaderboard_scores")
@@ -30,14 +34,49 @@ def upsert_best_score(
         .execute()
     )
     rows = existing.data or []
-    if rows and int(rows[0]["best_score"]) >= score:
-        return rows[0]
+    prior_best = int(rows[0]["best_score"]) if rows else 0
+    new_best = max(prior_best, score)
 
     row = {
         "corp_name": corp_name,
         "user_id": user_id,
         "user_name": user_name,
-        "best_score": score,
+        "best_score": new_best,
+    }
+    res = (
+        sb.table("leaderboard_scores")
+        .upsert(row, on_conflict="corp_name,user_id")
+        .execute()
+    )
+    data = res.data or []
+    return data[0] if data else row
+
+
+def refresh_display_name_only(
+    *,
+    corp_name: str,
+    user_id: str,
+    user_name: str,
+) -> dict | None:
+    """Update stored display name without changing best_score (for rows that already exist)."""
+    sb = get_supabase()
+    existing = (
+        sb.table("leaderboard_scores")
+        .select("best_score")
+        .eq("corp_name", corp_name)
+        .eq("user_id", user_id)
+        .limit(1)
+        .execute()
+    )
+    rows = existing.data or []
+    if not rows:
+        return None
+    prior = int(rows[0]["best_score"])
+    row = {
+        "corp_name": corp_name,
+        "user_id": user_id,
+        "user_name": user_name,
+        "best_score": prior,
     }
     res = (
         sb.table("leaderboard_scores")

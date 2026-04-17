@@ -392,6 +392,13 @@ async function boot() {
     }
   }
   await loadUser();
+  if (getToken()) {
+    try {
+      await api("/api/leaderboard/sync-name", { method: "POST" });
+    } catch (e) {
+      console.warn("Leaderboard display name sync:", e);
+    }
+  }
   await loadLeaderboard();
   newGame();
   boardEl.focus();
