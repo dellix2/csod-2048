@@ -46,34 +46,101 @@ async def fetch_userinfo(settings: Settings, access_token: str) -> dict:
         return r.json()
 
 
+def _flatten_userinfo(userinfo: dict) -> dict:
+    """Merge common nested shapes so lookups see CSOD / OData-style payloads."""
+    flat = dict(userinfo)
+    for nest_key in (
+        "user",
+        "User",
+        "profile",
+        "Profile",
+        "data",
+        "Data",
+        "properties",
+        "Properties",
+        "result",
+        "Result",
+    ):
+        nested = userinfo.get(nest_key)
+        if isinstance(nested, dict):
+            flat.update(nested)
+    return flat
+
+
 def parse_csod_user(userinfo: dict) -> tuple[str, str]:
     """
     Returns (user_id, display_name) from CSOD userinfo payload.
     Field names vary by tenant; we accept common OAuth + CSOD variants.
     """
+    if not isinstance(userinfo, dict):
+        raise ValueError("userinfo JSON is not an object")
+
+    u = _flatten_userinfo(userinfo)
+
     uid = (
-        userinfo.get("userId")
-        or userinfo.get("user_id")
-        or userinfo.get("UserId")
-        or userinfo.get("personId")
-        or userinfo.get("PersonId")
-        or userinfo.get("externalId")
-        or userinfo.get("ExternalId")
-        or userinfo.get("sub")
-        or userinfo.get("id")
+        u.get("userId")
+        or u.get("user_id")
+        or u.get("UserId")
+        or u.get("personId")
+        or u.get("PersonId")
+        or u.get("externalId")
+        or u.get("ExternalId")
+        or u.get("coreUserId")
+        or u.get("CoreUserId")
+        or u.get("employeeId")
+        or u.get("EmployeeId")
+        or u.get("candidateId")
+        or u.get("CandidateId")
+        or u.get("empId")
+        or u.get("EmpId")
+        or u.get("userGuid")
+        or u.get("UserGuid")
+        or u.get("UserGUID")
+        or u.get("sub")
+        or u.get("SUB")
+        or u.get("id")
+        or u.get("Id")
     )
+
     if uid is None:
-        raise ValueError("userinfo did not contain a recognizable user id field")
+        # Prefer scalar values on keys that look like identifiers (tenant-specific casing).
+        id_like = (
+            "userid",
+            "personid",
+            "employeeid",
+            "candidateid",
+            "externalid",
+            "coreuserid",
+            "empid",
+            "guid",
+        )
+        for k, v in u.items():
+            if v is None or isinstance(v, bool) or isinstance(v, (list, dict)):
+                continue
+            kl = "".join(c for c in k.lower() if c.isalnum())
+            if kl in id_like or kl.endswith("userid") or kl == "sub":
+                uid = v
+                break
+
+    if uid is None:
+        keys = sorted({*userinfo.keys(), *u.keys()})
+        raise ValueError(
+            "userinfo did not contain a recognizable user id field. "
+            f"Top-level JSON keys were: {keys!s}"
+        )
 
     name = (
-        userinfo.get("name")
-        or userinfo.get("preferred_username")
-        or userinfo.get("displayName")
-        or userinfo.get("DisplayName")
-        or userinfo.get("userName")
-        or userinfo.get("UserName")
-        or userinfo.get("email")
-        or userinfo.get("Email")
+        u.get("name")
+        or u.get("Name")
+        or u.get("preferred_username")
+        or u.get("displayName")
+        or u.get("DisplayName")
+        or u.get("userName")
+        or u.get("UserName")
+        or u.get("fullName")
+        or u.get("FullName")
+        or u.get("email")
+        or u.get("Email")
         or str(uid)
     )
     return str(uid), str(name)

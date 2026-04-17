@@ -81,10 +81,16 @@ async function loadUser() {
     authMsg.textContent = "";
     return me;
   } catch (e) {
-    sessionStorage.removeItem(TOKEN_KEY);
+    const msg = String(e.message || e);
+    const unauthorized = /\b401\b/.test(msg) || /\b403\b/.test(msg);
+    if (unauthorized) {
+      sessionStorage.removeItem(TOKEN_KEY);
+    }
     userLine.hidden = true;
-    authMsg.textContent =
-      "Session expired or invalid. Re-open the page from Cornerstone.";
+    authMsg.textContent = unauthorized
+      ? "Session expired or invalid. Re-open the page from Cornerstone."
+      : `Profile could not be loaded (${msg.slice(0, 200)}). Check Console / Network → /api/me.`;
+    console.error("/api/me failed:", e);
     return null;
   }
 }
@@ -374,18 +380,18 @@ async function boot() {
     authMsg.textContent = "Could not complete sign-in. Re-open from Cornerstone.";
     console.error(e);
   }
-  await loadUser();
   if (getToken()) {
     try {
       const rawUserinfo = await api("/api/me/raw");
       console.log(
-        "[CSOD userinfo] GET /services/api/oauth2/userinfo — full JSON (check Network tab + X-CSOD-Userinfo-URL header):",
+        "[CSOD userinfo] GET /services/api/oauth2/userinfo — full JSON:",
         rawUserinfo
       );
     } catch (e) {
       console.warn("[CSOD userinfo raw] failed:", e);
     }
   }
+  await loadUser();
   await loadLeaderboard();
   newGame();
   boardEl.focus();
