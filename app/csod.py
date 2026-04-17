@@ -156,6 +156,52 @@ def _name_from_userinfo_flat(u: dict, uid: str) -> str:
     )
 
 
+def _extract_first_last_from_dict(d: dict) -> tuple[str | None, str | None]:
+    """CSOD / OData-style field names."""
+    fn = (
+        d.get("firstName")
+        or d.get("FirstName")
+        or d.get("first_name")
+        or d.get("givenName")
+        or d.get("GivenName")
+        or d.get("preferredFirstName")
+        or d.get("PreferredFirstName")
+    )
+    ln = (
+        d.get("lastName")
+        or d.get("LastName")
+        or d.get("last_name")
+        or d.get("familyName")
+        or d.get("FamilyName")
+        or d.get("surname")
+        or d.get("Surname")
+    )
+    return (
+        str(fn).strip() if fn is not None else None,
+        str(ln).strip() if ln is not None else None,
+    )
+
+
+def _deep_find_names(obj: object, depth: int = 0) -> tuple[str | None, str | None]:
+    """Walk JSON to find first/last name objects (CSOD nesting varies)."""
+    if depth > 8:
+        return None, None
+    if isinstance(obj, dict):
+        fn, ln = _extract_first_last_from_dict(obj)
+        if fn or ln:
+            return fn, ln
+        for v in obj.values():
+            a, b = _deep_find_names(v, depth + 1)
+            if a or b:
+                return a, b
+    elif isinstance(obj, list):
+        for item in obj:
+            a, b = _deep_find_names(item, depth + 1)
+            if a or b:
+                return a, b
+    return None, None
+
+
 async def fetch_employee_display_name(
     settings: Settings, access_token: str, employee_id: str
 ) -> str | None:
@@ -163,31 +209,42 @@ async def fetch_employee_display_name(
     GET /services/api/x/users/v2/employees/employees/{id} → first + last name for leaderboard.
     """
     base = _base_url(settings)
-    url = f"{base}/services/api/x/users/v2/employees/employees/{employee_id}"
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            r = await client.get(
-                url,
-                headers={
-                    "Authorization": f"Bearer {access_token}",
-                    "Accept": "application/json",
-                },
-            )
-            r.raise_for_status()
-            body = r.json()
-    except httpx.HTTPStatusError as e:
-        logger.warning(
-            "Employee profile HTTP %s for id=%s: %s",
-            e.response.status_code,
-            employee_id,
-            e.response.text[:500],
-        )
-        return None
-    except Exception as e:
-        logger.warning("Employee profile request failed for id=%s: %s", employee_id, e)
-        return None
+    urls = [
+        f"{base}/services/api/x/users/v2/employees/employees/{employee_id}",
+        f"{base}/services/api/x/users/v2/employees/{employee_id}",
+    ]
+    body: dict | None = None
+    last_err: str | None = None
+    for url in urls:
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                r = await client.get(
+                    url,
+                    headers={
+                        "Authorization": f"Bearer {access_token}",
+                        "Accept": "application/json, text/plain, */*",
+                    },
+                )
+                r.raise_for_status()
+                ct = (r.headers.get("content-type") or "").lower()
+                if "json" not in ct:
+                    logger.warning("Employee profile non-JSON (%s) for id=%s", ct, employee_id)
+                    continue
+                parsed = r.json()
+                if isinstance(parsed, dict):
+                    body = parsed
+                    break
+                last_err = "response not a JSON object"
+        except httpx.HTTPStatusError as e:
+            last_err = f"{e.response.status_code}: {e.response.text[:300]}"
+            logger.warning("Employee profile %s for id=%s: %s", url, employee_id, last_err)
+            continue
+        except Exception as e:
+            last_err = str(e)
+            logger.warning("Employee profile request %s failed for id=%s: %s", url, employee_id, e)
+            continue
 
-    if not isinstance(body, dict):
+    if body is None:
         return None
 
     merged: dict = dict(body)
@@ -197,23 +254,16 @@ async def fetch_employee_display_name(
     elif isinstance(inner, list) and len(inner) > 0 and isinstance(inner[0], dict):
         merged.update(inner[0])
 
-    fn = (
-        merged.get("firstName")
-        or merged.get("FirstName")
-        or merged.get("first_name")
-        or merged.get("givenName")
-        or merged.get("GivenName")
-    )
-    ln = (
-        merged.get("lastName")
-        or merged.get("LastName")
-        or merged.get("last_name")
-        or merged.get("familyName")
-        or merged.get("FamilyName")
-    )
-    parts = [p.strip() for p in (fn, ln) if p and str(p).strip()]
+    fn, ln = _extract_first_last_from_dict(merged)
+    if not fn and not ln:
+        fn, ln = _deep_find_names(body)
+
+    parts = [p for p in (fn, ln) if p]
     if parts:
-        return " ".join(parts)
+        name = " ".join(parts)
+        logger.info("Resolved employee display name for id=%s", employee_id)
+        return name
+    logger.warning("Employee JSON had no first/last fields for id=%s keys=%s", employee_id, list(body.keys()))
     return None
 
 

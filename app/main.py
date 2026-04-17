@@ -115,13 +115,20 @@ async def submit_score(
     except ValueError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
 
-    row = await asyncio.to_thread(
-        db.upsert_best_score,
-        corp_name=settings.csod_corp,
-        user_id=uid,
-        user_name=name,
-        score=body.score,
-    )
+    try:
+        row = await asyncio.to_thread(
+            db.upsert_best_score,
+            corp_name=settings.csod_corp,
+            user_id=uid,
+            user_name=name,
+            score=body.score,
+        )
+    except Exception:
+        logger.exception("Supabase upsert_best_score failed for user_id=%s", uid)
+        raise HTTPException(
+            status_code=503,
+            detail="Could not save score (database error — check Render logs and Supabase).",
+        ) from None
     return {"saved": True, "best_score": row.get("best_score", body.score)}
 
 
