@@ -433,6 +433,7 @@ async function boot() {
     } catch (e) {
       console.warn("Leaderboard display name sync:", e);
     }
+    await loadUser();
   }
   await loadLeaderboard();
 

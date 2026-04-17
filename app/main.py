@@ -71,17 +71,25 @@ async def exchange_token(
 
 @app.get("/api/me")
 async def me(
+    response: Response,
     settings: Settings = Depends(get_settings),
     token: str = Depends(bearer_token),
 ):
+    response.headers["Cache-Control"] = "no-store"
     try:
         userinfo = await csod.fetch_userinfo(settings, token)
-        uid, name = await csod.resolve_user_profile(settings, token, userinfo)
+        uid, csod_name = await csod.resolve_user_profile(settings, token, userinfo)
     except httpx.HTTPStatusError as e:
         raise HTTPException(status_code=e.response.status_code, detail=e.response.text) from e
     except ValueError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
-    return {"user_id": uid, "user_name": name, "corp": settings.csod_corp}
+    stored = await asyncio.to_thread(
+        db.fetch_stored_user_name, settings.csod_corp, uid
+    )
+    display = db.merge_display_name(
+        user_id=uid, incoming=csod_name, existing_name=stored
+    )
+    return {"user_id": uid, "user_name": display, "corp": settings.csod_corp}
 
 
 @app.get("/api/me/raw")
@@ -165,7 +173,11 @@ async def submit_score(
 
 
 @app.get("/api/leaderboard")
-async def leaderboard(settings: Settings = Depends(get_settings)):
+async def leaderboard(
+    response: Response,
+    settings: Settings = Depends(get_settings),
+):
+    response.headers["Cache-Control"] = "no-store"
     try:
         rows = await asyncio.to_thread(
             db.fetch_leaderboard,
