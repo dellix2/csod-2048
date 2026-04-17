@@ -45,7 +45,8 @@ async function api(path, opts = {}) {
 
 async function exchangeFromQuery() {
   const params = new URLSearchParams(window.location.search);
-  const code = params.get("code");
+  // CSOD docs use ?code=; some Cornerstone custom pages use ?authCode= instead.
+  const code = params.get("code") || params.get("authCode");
   const state = params.get("state");
   if (!code || !state) return false;
 
@@ -58,7 +59,9 @@ async function exchangeFromQuery() {
   setToken(data.access_token);
   const clean = new URL(window.location.href);
   clean.searchParams.delete("code");
+  clean.searchParams.delete("authCode");
   clean.searchParams.delete("state");
+  clean.searchParams.delete("sessionId");
   window.history.replaceState({}, "", clean.toString());
   return true;
 }
@@ -125,8 +128,8 @@ async function submitScoreIfNeeded() {
     });
     lastServerBestSent = Math.max(lastServerBestSent, res.best_score || score);
     await loadLeaderboard();
-  } catch {
-    /* ignore transient errors */
+  } catch (e) {
+    console.warn("Score sync failed (need sign-in):", e);
   }
 }
 
