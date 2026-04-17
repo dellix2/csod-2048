@@ -57,8 +57,11 @@ def refresh_display_name_only(
     corp_name: str,
     user_id: str,
     user_name: str,
-) -> dict | None:
-    """Update stored display name without changing best_score (for rows that already exist)."""
+) -> dict:
+    """
+    Upsert display name for this user. Preserves existing best_score when a row exists;
+    otherwise inserts a row with best_score 0 so the name is stored before the first game.
+    """
     sb = get_supabase()
     existing = (
         sb.table("leaderboard_scores")
@@ -69,9 +72,7 @@ def refresh_display_name_only(
         .execute()
     )
     rows = existing.data or []
-    if not rows:
-        return None
-    prior = int(rows[0]["best_score"])
+    prior = int(rows[0]["best_score"]) if rows else 0
     row = {
         "corp_name": corp_name,
         "user_id": user_id,
@@ -94,6 +95,7 @@ def fetch_leaderboard(corp_name: str, limit: int) -> list[dict]:
         sb.table("leaderboard_scores")
         .select("user_id,user_name,best_score")
         .eq("corp_name", corp_name)
+        .gt("best_score", 0)
         .order("best_score", desc=True)
         .limit(limit)
         .execute()

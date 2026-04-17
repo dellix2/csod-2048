@@ -107,8 +107,7 @@ async def sync_leaderboard_display_name(
     token: str = Depends(bearer_token),
 ):
     """
-    Refresh stored user_name for this user when display name was fixed (e.g. employee API)
-    but best_score row already existed with an old placeholder like "User 1026".
+    Upsert stored user_name for this user (creates a row with best_score 0 if none exists).
     """
     try:
         userinfo = await csod.fetch_userinfo(settings, token)
@@ -119,7 +118,7 @@ async def sync_leaderboard_display_name(
         raise HTTPException(status_code=502, detail=str(e)) from e
 
     try:
-        row = await asyncio.to_thread(
+        await asyncio.to_thread(
             db.refresh_display_name_only,
             corp_name=settings.csod_corp,
             user_id=uid,
@@ -131,7 +130,7 @@ async def sync_leaderboard_display_name(
             status_code=503,
             detail="Could not update leaderboard name (database error).",
         ) from None
-    return {"ok": True, "updated": row is not None}
+    return {"ok": True, "updated": True}
 
 
 @app.post("/api/scores")
