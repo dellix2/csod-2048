@@ -81,6 +81,8 @@ If that matches, **Render is connected to your Git repo**.
 
    Paste **real values** from your local `.env` file (not from `.env.example`).
 
+   **Alternative — Secret Files:** You can upload a single file named **`.env`** (same `KEY=value` lines) under **Environment → Secret Files** instead of pasting each variable. This app loads it from **`/etc/secrets/.env`** on Render.
+
 7. Click **Create Web Service** and wait until the first deploy finishes.
 
 After this, your app **is** connected to Render.
