@@ -36,7 +36,7 @@ async function api(path, opts = {}) {
   const r = await fetch(path, { ...opts, headers });
   if (!r.ok) {
     const err = await r.text();
-    throw new Error(err || r.statusText);
+    throw new Error(`${r.status} ${r.statusText}: ${err || ""}`);
   }
   const ct = r.headers.get("content-type");
   if (ct && ct.includes("application/json")) return r.json();
@@ -102,7 +102,8 @@ async function loadLeaderboard() {
       li.innerHTML = `${i + 1}. ${escapeHtml(row.user_name)} — <span class="leader-score">${row.best_score}</span>`;
       leaderList.appendChild(li);
     });
-  } catch {
+  } catch (e) {
+    console.error("Leaderboard request failed:", e);
     leaderList.innerHTML = "<li>Could not load leaderboard.</li>";
   }
 }

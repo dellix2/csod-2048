@@ -1,8 +1,10 @@
 import asyncio
+import logging
 from pathlib import Path
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -11,7 +13,19 @@ from app.config import Settings, get_settings
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
+logger = logging.getLogger(__name__)
+
 app = FastAPI(title="2048 CSOD Widget")
+
+# Embedded in Cornerstone (and other LMS) iframes: parent origin ≠ app origin, so browsers require CORS.
+# Reflect any https? Origin that matches (tighten if you only use known CSOD hostnames).
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex=r"https?://.*",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 class TokenExchangeBody(BaseModel):
@@ -96,11 +110,18 @@ async def submit_score(
 
 @app.get("/api/leaderboard")
 async def leaderboard(settings: Settings = Depends(get_settings)):
-    rows = await asyncio.to_thread(
-        db.fetch_leaderboard,
-        settings.csod_corp,
-        settings.leaderboard_limit,
-    )
+    try:
+        rows = await asyncio.to_thread(
+            db.fetch_leaderboard,
+            settings.csod_corp,
+            settings.leaderboard_limit,
+        )
+    except Exception:
+        logger.exception("leaderboard Supabase query failed")
+        raise HTTPException(
+            status_code=503,
+            detail="Leaderboard database query failed (check Render logs and Supabase env vars).",
+        ) from None
     return {"corp": settings.csod_corp, "entries": rows}
 
 
