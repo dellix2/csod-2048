@@ -76,7 +76,7 @@ async def me(
 ):
     try:
         userinfo = await csod.fetch_userinfo(settings, token)
-        uid, name = csod.parse_csod_user(userinfo)
+        uid, name = await csod.resolve_user_profile(settings, token, userinfo)
     except httpx.HTTPStatusError as e:
         raise HTTPException(status_code=e.response.status_code, detail=e.response.text) from e
     except ValueError as e:
@@ -109,7 +109,7 @@ async def submit_score(
 ):
     try:
         userinfo = await csod.fetch_userinfo(settings, token)
-        uid, name = csod.parse_csod_user(userinfo)
+        uid, name = await csod.resolve_user_profile(settings, token, userinfo)
     except httpx.HTTPStatusError as e:
         raise HTTPException(status_code=e.response.status_code, detail=e.response.text) from e
     except ValueError as e:
